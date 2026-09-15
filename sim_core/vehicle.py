@@ -27,7 +27,12 @@ from sim_core.driver_input import DriverInput
 from sim_core.engine import Engine, Gearbox
 from sim_core.physics import PhysicsState
 from sim_core.tyre_wheel import Wheel
-from sim_core.settings import PETROL_WEIGHT, SPORTS_TYRE
+from sim_core.settings import (
+    PETROL_WEIGHT,
+    SPORTS_TYRE,
+    GRAVITY,
+    FRONT_LEFT, FRONT_RIGHT, REAR_LEFT, REAR_RIGHT,
+)
 from sim_core.math_utils import clamp
 
 
@@ -55,8 +60,11 @@ class Vehicle:
         self,
         driver_input: DriverInput,
         engine: Engine,
-        gearbox: Gearbox,            
+        gearbox: Gearbox,
+        name: str="Unknown",
     ) -> None:
+
+        self.name=name
 
         # ----------------------------------------------------------
         # Driver controls
@@ -108,6 +116,12 @@ class Vehicle:
             + self.driver_mass
         )
 
+        # Centre of gravity height
+        self.cg_height: float = 0.55 # metres
+
+        # Centre of mass
+        self.centre_of_mass = 0.5 # exact halfway point
+
         # ----------------------------------------------------------
         # Chassis rotational inertia
         # ----------------------------------------------------------
@@ -123,11 +137,25 @@ class Vehicle:
         #
         # A higher capacity allows more engine torque to be
         # transferred before the clutch slips.
-        self.clutch_capacity: float = 250.0
+        self.clutch_capacity: float = 500.0
 
         # Controls how strongly the clutch reacts to speed
         # difference between the engine and drivetrain.
-        self.clutch_stiffness: float = 20.0
+        self.clutch_stiffness: float = 5.0
+
+        # The automatic clutch starts fully engaged.
+        self.clutch_engaged: bool = True
+
+        # During a gear change the clutch is initially released,
+        # then gradually re-engaged
+        self.clutch_engagement: float = 1.0
+
+        # Duration of the automatic clutch release during a shift.
+        self.clutch_shift_duration: float = 0.15
+
+        self.shift_throttle_cut: float = 0.0
+
+        self.clutch_torque: float = 0.0
 
         # ----------------------------------------------------------
         # Physical state
@@ -255,62 +283,92 @@ class Vehicle:
         """
         Calculate the torque transmitted through the clutch.
 
-        The clutch transfers positive engine torque to the drivetrain.
-        When the engine and drivetrain speeds are different, the clutch
-        can slip and its transmitted torque is limited by clutch capacity.
+        When the clutch is engaged, torque is transmitted in whichever
+        direction is required to reduce the speed difference between
+        the engine and drivetrain.
 
-        Once the engine and drivetrain are nearly synchronised, the clutch
-        is considered engaged and transmits the available engine torque.
+        Positive torque means the engine is driving the drivetrain.
+
+        Negative torque means the drivetrain is driving the engine.
+
+        Positive torque is limited by the engine's available torque.
+        Negative torque is limited by the clutch capacity.
         """
-
-        engine_angular_velocity = (
-            self.engine.rpm * 2.0 * math.pi / 60.0
-        )
+        if not self.clutch_engaged:
+            return 0.0
 
         drivetrain_angular_velocity = (
             self.get_drivetrain_angular_velocity()
         )
 
-        speed_difference = (
+        engine_angular_velocity = (
+            self.engine.rpm * 2.0 * math.pi / 60.0
+        )
+
+        relative_angular_velocity = (
             engine_angular_velocity
             - drivetrain_angular_velocity
         )
 
-        # When the engine and drivetrain are rotating at almost the
-        # same speed, treat the clutch as fully engaged.
-        if abs(speed_difference) < 1.0:
-            return self.engine.get_available_torque()
-
-        # While slipping, the clutch torque opposes the speed
-        # difference between the engine and drivetrain.
-        clutch_torque = (
-            speed_difference * self.clutch_stiffness
+        coupling_torque = (
+            relative_angular_velocity
+            * self.clutch_stiffness
+            * self.clutch_engagement
         )
 
-        # The clutch should not transmit more torque than its capacity.
-        # Do not allow it to become negative and act like a brake.
-        return clamp(
-            clutch_torque,
-            0.0,
-            self.clutch_capacity
+        if coupling_torque >= 0.0:
+            maximum_torque = min(
+                coupling_torque,
+                self.engine.get_available_torque(),
+                self.clutch_capacity * self.clutch_engagement,
+            )
+
+            return maximum_torque
+
+        return max(
+            coupling_torque,
+            -self.clutch_capacity * self.clutch_engagement,
         )
+
+
+
+    def update_clutch(self, dt: float) -> None:
+        """
+        Update the automatic clutch state.
+        
+        During an automatic gear change the cluth remains released
+        for a short peroid. Once that peroid has elapsed, the clutch
+        engages again.
+        """
+        if self.clutch_engaged:
+            return
+
+        engagement_rate = 1.0 / self.clutch_shift_duration
+
+        self.clutch_engagement += engagement_rate * dt
+        if self.clutch_engagement >= 1.0:
+            self.clutch_engagement = 1.0
+            self.clutch_engaged = True
 
 
     def get_drivetrain_torque(self) -> float:
         """
         Calculate the torque delivered to the drivetrain.
 
-        When a gear is engaged, the clutch is treated as fully locked.
-        Engine torque therefore passes directly through the gearbox and
-        final drive, with a small allowance for drivetrain losses.
+        The clutch determines how much of the engine torque is
+        transmitted to the gearbox. The gearbox and final drive
+        then multiply the transmitted torque.
+
+        Returns:
+            Torque delivered to the driven wheels in Nm.
         """
 
-        engine_torque = self.engine.get_available_torque()
         total_gear_ratio = self.gearbox.get_total_ratio()
         drivetrain_efficiency = 0.90
+        
 
         return (
-            engine_torque
+            self.clutch_torque
             * total_gear_ratio
             * drivetrain_efficiency
         )
@@ -318,38 +376,17 @@ class Vehicle:
 
     def update_engine(self, dt: float) -> None:
         """
-        Update engine RPM.
+        Update engine RPM from engine torque and clutch load.
 
-        When a gear is engaged, the clutch is treated as locked and
-        engine speed follows the drivetrain speed through the gearbox.
+        The clutch torque was already calculated earlier in this
+        simulation timestep and is reused here.
 
-        In neutral, the engine is free to accelerate and decelerate
-        independently.
+        When the clutch is released during a gear change, the stored
+        clutch torque will be zero.
         """
-
-        total_ratio = self.gearbox.get_total_ratio()
-
-        if total_ratio == 0.0:
-            self.engine.update_rpm(
-                load_torque=0.0,
-                dt=dt,
-            )
-            return
-
-        drivetrain_angular_velocity = (
-            self.get_drivetrain_angular_velocity()
-        )
-
-        drivetrain_rpm = (
-            abs(drivetrain_angular_velocity)
-            * 60.0
-            / (2.0 * math.pi)
-        )
-
-        self.engine.rpm = clamp(
-            drivetrain_rpm,
-            self.engine.idle_rpm,
-            self.engine.redline,
+        self.engine.update_rpm(
+            load_torque=self.clutch_torque,
+            dt=dt
         )
 
 
@@ -387,14 +424,22 @@ class Vehicle:
         # Keep all driver controls inside their valid ranges.
         self.driver_input.validate()
 
+        if self.clutch_engaged:
+            self.shift_throttle_cut = 0.0
+        else:
+            self.shift_throttle_cut = 1.00
+
         # Transfer accelerator input to the engine.
-        self.engine.throttle = self.driver_input.throttle
+        self.engine.throttle = (
+            self.driver_input.throttle
+            * (1.0 - self.shift_throttle_cut)
+        )
 
         # Apply the requested gear.
 
         # This is deliberately simple for now.
         # We are not simulating clutch movement or gear-shift timing yet
-        self.gearbox.current_gear = self.driver_input.gear_request
+        # self.gearbox.current_gear = self.driver_input.gear_request
 
         # Apply steering to the steered wheels.
         #
@@ -462,26 +507,69 @@ class Vehicle:
 
     def calculate_normal_forces(self) -> None:
         """
-        Calculate the static normal force on each wheel.
+        Calculate the normal force acting on each wheel.
 
-        This first version assumes:
+        This assumes:
 
-        - The vehicle is standing on level ground.
-        - Weight is distributed equally.
-        - There is no weight transfer during acceleration.
+        - The vehicle is on level ground.
+        - The vehicle has four wheels.
+        - The centre-of-mass position is expressed as a fraction
+        of the wheelbase measured from the front axle.
+        - Longitudinal acceleration causes weight transfer between
+        the front and rear axles.
         - There is no aerodynamic downforce.
 
-        More advanced weight transfer will be added later.
+        Positive acceleration transfers load from the front axle
+        to the rear axle.
+
+        Negative acceleration, such as braking, transfers load from
+        the rear axle to the front axle.
         """
 
-        gravity = 9.81
+        gravity = GRAVITY
 
         total_weight = (self.total_mass * gravity)
 
-        normal_force_per_wheel = (total_weight / len(self.wheels))
 
-        for wheel in self.wheels:
-            wheel.normal_force = normal_force_per_wheel
+        # Static weight distribution before acceleration or braking.
+        #
+        # centre_of_mass = 0.0 means the centre of mass is directly
+        # above the front axle.
+        #
+        # centre_of_mass = 1.0 means the centre of mass is directly
+        # above the rear axle.
+        #
+        # For example, 0.5 means a 50/50 static weight distribution.
+        static_front_load = total_weight * (1.0 - self.centre_of_mass)
+        static_rear_load = total_weight * self.centre_of_mass
+
+
+        # Longitudinal weight transfer caused by acceleration.
+        #
+        # Positive acceleration transfers load rearwards.
+        # Negative acceleration transfers load forwards.
+        load_transfer = (
+            self.total_mass
+            * self.physics.acceleration_x
+            * self.cg_height
+            / self.wheelbase
+        )
+
+        front_axle_load = static_front_load - load_transfer
+        read_axle_load = static_rear_load + load_transfer
+
+
+        # Assuming a four-wheeled vehicle with equel left/right
+        # weight distribution.
+        front_wheel_load = front_axle_load / 2.0
+        rear_wheel_load = read_axle_load / 2.0
+
+
+        self.wheels[FRONT_LEFT].normal_force = front_wheel_load
+        self.wheels[FRONT_RIGHT].normal_force = front_wheel_load
+        self.wheels[REAR_LEFT].normal_force = rear_wheel_load
+        self.wheels[REAR_RIGHT].normal_force = rear_wheel_load
+
 
 
     def update(self, dt: float) -> None:
@@ -507,13 +595,19 @@ class Vehicle:
         self.calculate_normal_forces()
 
         # ----------------------------------------------------------
-        # 3. Apply engine torque to driven wheels
+        # 3. Calculate cluth torque once for this timestep
+        # ----------------------------------------------------------
+        self.clutch_torque = self.calculate_clutch_torque()
+
+
+        # ----------------------------------------------------------
+        # 4. Apply engine torque to driven wheels
         # ----------------------------------------------------------
 
         self.distribute_drive_torque()
 
         # ----------------------------------------------------------
-        # 4. Calculate tyre forces
+        # 5. Calculate tyre forces
         # ----------------------------------------------------------
 
         self.calculate_wheel_forces()
@@ -525,11 +619,17 @@ class Vehicle:
             )
 
         # The wheels have now reacted to the tyre forces.
-        # Feedf the resulting drivetrain speed back into the engine.
+        # Feed the resulting drivetrain speed back into the engine.
         self.update_engine(dt)
 
+        # Check whether an automatic gear change is required.
+        self.update_automatic_shift()
+
+        # Update teh autommatic clutch state.
+        self.update_clutch(dt)
+
         # ----------------------------------------------------------
-        # 5. Calculate chassis acceleration
+        # 6. Calculate chassis acceleration
         # ----------------------------------------------------------
 
         from sim_core.physics import calculate_chassis_dynamics
@@ -538,7 +638,8 @@ class Vehicle:
             calculate_chassis_dynamics(
                 wheels=self.wheels,
                 mass=self.total_mass,
-                yaw_inertia=self.yaw_inertia
+                yaw_inertia=self.yaw_inertia,
+                vehicle_velocity_x=self.physics.velocity_x,
             )
         )
 
@@ -547,7 +648,7 @@ class Vehicle:
         self.physics.yaw_acceleration = yaw_acceleration
 
         # ----------------------------------------------------------
-        # 6. Integrate acceleration into velocity
+        # 7. Integrate acceleration into velocity
         # ----------------------------------------------------------
 
         self.physics.velocity_x += (
@@ -559,7 +660,7 @@ class Vehicle:
         )
 
         # ----------------------------------------------------------
-        # 7. Integrate velocity into position
+        # 8. Integrate velocity into position
         # ----------------------------------------------------------
 
         self.physics.position_x += (
@@ -571,7 +672,7 @@ class Vehicle:
         )
 
         # ----------------------------------------------------------
-        # 8. Integrate yaw motion
+        # 9. Integrate yaw motion
         # ----------------------------------------------------------
 
         self.physics.yaw_rate += (
@@ -583,7 +684,58 @@ class Vehicle:
         )
 
         # ----------------------------------------------------------
-        # 9. Apply engine RPM limiter
+        # 10. Apply engine RPM limiter
         # ----------------------------------------------------------
 
         self.engine.apply_rev_limiter()
+
+
+    def update_automatic_shift(self) -> None:
+        """
+        Shift up automatically when the engine approaches redline.
+
+        The clutch is temporarily released during the gear change so
+        the engine RPM can fall to match the new gear ratio before
+        the drivetrain is coupled again.
+        """
+        if not self.clutch_engaged:
+            return
+    
+        shift_rpm = self.engine.redline * 0.90
+
+        if self.engine.rpm < shift_rpm:
+            return
+        
+        current_gear = self.gearbox.current_gear
+        next_gear = current_gear + 1
+
+        if next_gear not in self.gearbox.ratios:
+            return
+
+        if not self.is_drivetrain_transmitting_torque():
+            return
+        
+        print(
+            f"{self.name}: "
+            f"GEAR SHIFT {current_gear} -> {next_gear}"
+        )
+
+        if next_gear in self.gearbox.ratios:
+            self.gearbox.shift_up()
+            self.clutch_engaged = False
+            self.clutch_engagement = 0.0
+
+
+    def is_drivetrain_transmitting_torque(self) -> bool:
+        if not self.clutch_engaged:
+            return False
+
+        if self.gearbox.get_total_ratio() == 0.0:
+            return False
+
+        if self.clutch_torque <= 0.0:
+            return False
+
+        return True
+
+    

@@ -39,6 +39,12 @@ import math
 from dataclasses import dataclass
 
 from sim_core.tyre_wheel import Wheel
+from sim_core.settings import (
+    ROLLING_RESISTANCE_COEFFICIENT,
+    AIR_DENSITY,
+    AERODYNAMIC_DRAG_COEFFICIENT,
+    FRONTAL_AREA,
+)
 
 
 
@@ -273,6 +279,7 @@ def tyre_force_to_chassis(
 
 def calculate_total_force(
     wheels: list[Wheel],
+    vehicle_velocity_x: float,
 ) -> tuple[float, float]:
     """
     Sum the forces produced by all wheels.
@@ -280,9 +287,14 @@ def calculate_total_force(
     Each wheel's force is first converted into vehicle-local
     coordinates, then added to the total.
 
+    Rolling resistance and aerodynamic drag are also included.
+
     Args:
         wheels:
             List containing the vehicle's wheels.
+
+        vehicle_velocity_x:
+            Vehicle's forward velocity in metres per second.
 
     Returns:
         Tuple containing:
@@ -305,6 +317,27 @@ def calculate_total_force(
 
         total_force_x += force_x
         total_force_y += force_y
+
+        rolling_resistance = calculate_rolling_resistance(
+            normal_force=wheel.normal_force,
+        )
+
+        if vehicle_velocity_x > 0.0:
+            total_force_x -= rolling_resistance
+
+        elif vehicle_velocity_x < 0.0:
+            total_force_x += rolling_resistance
+
+    aerodynamic_drag = calculate_aerodynamic_drag(
+        vehicle_velocity_x=vehicle_velocity_x,
+    )
+
+    if vehicle_velocity_x > 0.0:
+        total_force_x -= aerodynamic_drag
+
+    elif vehicle_velocity_x < 0.0:
+        total_force_x += aerodynamic_drag
+       
 
     return total_force_x, total_force_y
 
@@ -453,6 +486,55 @@ def calculate_yaw_acceleration(
     return yaw_moment / yaw_inertia
 
 
+def calculate_rolling_resistance(
+        normal_force: float,
+) -> float:
+    """
+    Calculate the rolling resistance acting on a wheel.
+
+    Rolling resistance is approximately proportional to the
+    normal force acting on the tyre.
+
+    Args:
+        normal_force: Vertical load on the wheel in newtons.
+        coefficient: Rolling resistance coefficient.
+
+    Returns:
+        Rolling resistance force in newtons.
+    """
+
+    return normal_force * ROLLING_RESISTANCE_COEFFICIENT
+
+
+def calculate_aerodynamic_drag(
+        vehicle_velocity_x: float,
+) -> float:
+    """
+    Calculate aerodynamic drag acting against the vehicle.
+
+    Aerodynamic drag increases with the square of vehicle speed.
+
+    Args:
+        vehicle_velocity_x:
+            Vehicle forward velocity in metres per second.
+
+    Returns:
+        Aerodynamic drag force in newtons.
+    """
+
+    speed_squared = (
+        vehicle_velocity_x * vehicle_velocity_x
+    )
+
+    return (
+        0.5
+        * AIR_DENSITY
+        * AERODYNAMIC_DRAG_COEFFICIENT
+        * FRONTAL_AREA
+        * speed_squared
+    )
+
+
 # ------------------------------------------------------------
 # Complete chassis calculation
 # ------------------------------------------------------------
@@ -461,6 +543,7 @@ def calculate_chassis_dynamics(
     wheels: list[Wheel],
     mass: float,
     yaw_inertia: float,
+    vehicle_velocity_x: float,
 ) -> tuple[float, float, float]:
     """
     Calculate the chassis acceleration and yaw acceleration.
@@ -487,6 +570,7 @@ def calculate_chassis_dynamics(
 
     total_force_x, total_force_y = calculate_total_force(
         wheels=wheels,
+        vehicle_velocity_x=vehicle_velocity_x
     )
 
     total_yaw_moment = calculate_total_yaw_moment(
@@ -509,3 +593,4 @@ def calculate_chassis_dynamics(
         acceleration_y,
         yaw_acceleration,
     )
+

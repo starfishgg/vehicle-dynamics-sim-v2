@@ -290,3 +290,19 @@ def calculate_chassis_dynamics(car):
         acceleration_y,
         yaw_acceleration,
     )
+
+def metres_per_second_to_kph(
+        speed_mps: float,
+) -> float:
+    """
+    convert speed from metres per second to kilometres per hour.
+
+    Args:
+        speed_mps:
+            Speed in metres per second.
+
+    Returns:
+        Speed in kilometres per hour.
+    """
+
+    return speed_mps * 3.6

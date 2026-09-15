@@ -251,15 +251,32 @@ class Gearbox:
         return self.get_ratio() * self.final_drive
 
 
-GEARBOX_5_SPEED = Gearbox(
-    {
-        -1: -2.92, # Reverse
-         0:  0.00, # Neutral
-         1:  2.50,
-         2:  1.61,
-         3:  1.10,
-         4:  0.81,
-         5:  0.68,
-    },
-    final_drive=5.0,
-)
+    def shift_up(self) -> None:
+        """
+        Shift up to the next available forward gear.
+
+        If the gearbox is already in the highest forward gear,
+        no change is made.
+        """
+
+        next_gear = self.current_gear + 1
+
+        if next_gear in self.ratios:
+            self.current_gear = next_gear
+
+
+
+
+def create_5_speed_gearbox() -> Gearbox:
+    return Gearbox(
+        {
+            -1: -2.92, # Reverse
+            0:  0.00, # Neutral
+            1:  2.50,
+            2:  1.61,
+            3:  1.10,
+            4:  0.81,
+            5:  0.68,
+        },
+        final_drive=5.0,
+    )
