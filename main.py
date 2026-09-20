@@ -201,21 +201,21 @@ def drag_race() -> None:
 
         if race.elapsed_time >= next_output_time:
 
-            raw_engine_torque = race.cars[car_id].engine.get_torque()
-            available_engine_torque = race.cars[car_id].engine.get_available_torque()
-            drivetrain_torque = race.cars[car_id].get_drivetrain_torque()
+            raw_engine_torque = race.cars[car_id].drivetrain.engine.get_torque()
+            available_engine_torque = race.cars[car_id].drivetrain.engine.get_available_torque()
+            drivetrain_torque = race.cars[car_id].drivetrain.get_drivetrain_torque()
 
             print(f"{race.elapsed_time:4.1f}s  ", end="")
             positions = race.get_positions()
             #print(f"{positions[0]:.1f}m  ", end="")
             print(f"{race.cars[car_id].physics.velocity_x:6.2f}m/s  ", end="")
             print(f"{metres_per_second_to_kph(race.cars[car_id].physics.velocity_x):6.2f}km/h  ", end="")
-            print(f"{race.cars[car_id].engine.rpm:7.2f} rpm ", end="")
-            print(f"{race.cars[car_id].engine.throttle:5.2f}  ", end="")
+            print(f"{race.cars[car_id].drivetrain.engine.rpm:7.2f} rpm ", end="")
+            print(f"{race.cars[car_id].drivetrain.engine.throttle:5.2f}  ", end="")
             print(f"{raw_engine_torque:10.2f} Nm ", end="")
             print(f"{available_engine_torque:10.2f} Nm ", end="")
             print(f"{drivetrain_torque:10.2f} Nm  ", end="")
-            print(f"{race.cars[car_id].gearbox.current_gear:8} ", end="")
+            print(f"{race.cars[car_id].drivetrain.gearbox.current_gear:8} ", end="")
             print(f"{race.cars[car_id].wheels[FRONT_LEFT].get_surface_speed():10.2f} m/s")
 
             print(
@@ -235,8 +235,11 @@ def drag_race() -> None:
             
             
     print()
+    if race.finished:
+        for car, finish_time in race.get_results():
+            print(f"{car.name}: {finish_time:.2f} seconds")
+    print()
     print(f"WINNER: {race.winner.name}")
-    print(f"TIME: {race.elapsed_time:.2f} seconds")
 
 
 

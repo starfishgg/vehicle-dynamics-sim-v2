@@ -46,6 +46,9 @@ class DragRace:
         self.finished: bool = False
         self.winner: Vehicle | None = None
 
+        self.finished_cars: set[Vehicle] = set()
+        self.finish_times: dict[Vehicle, float] = {}
+
     def update(self, dt: float) -> None:
         """
         Advamce every car by one simulation step.
@@ -61,7 +64,8 @@ class DragRace:
             return
 
         for car in self.cars:
-            car.update(dt)
+            if car not in self.finished_cars:
+               car.update(dt)
 
         self.elapsed_time += dt
 
@@ -73,14 +77,23 @@ class DragRace:
         Check whether any car has reached the finish distance.
 
         The first car to reach the finish line is declared
-        the winner.
+        the winner, but the race continues until every car has crossed the finish line.
         """
 
         for car in self.cars:
-            if car.physics.position_x >= self.finish_distance:
-                self.finished = True
-                self.winner = car
+            if (
+                car not in self.finished_cars
+                and car.physics.position_x >= self.finish_distance
+            ):
+                self.finished_cars.add(car)
+                self.finish_times[car] = self.elapsed_time
+
+                if self.winner is None:
+                    self.winner = car
                 return
+
+        if len(self.finished_cars) == len(self.cars):
+            self.finished = True
 
 
     def get_positions(self) -> list[float]:
@@ -120,5 +133,16 @@ class DragRace:
         return max(
             self.cars,
             key=lambda car: car.physics.position_x
+        )
+
+
+    def get_results(self) -> list[tuple[Vehicle, float]]:
+        """
+        Return the race results ordered by finish time.
+        """
+
+        return sorted(
+            self.finish_times.items(),
+            key=lambda result: result[1],
         )
 
