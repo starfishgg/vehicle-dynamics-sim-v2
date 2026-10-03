@@ -140,6 +140,17 @@ class Engine:
         return self.get_torque() * self.throttle
 
 
+    def get_rpm(self) -> float:
+        """
+        Return the current engine RPM.
+
+        Returns:
+            Engine speed in revolutions per minute.
+        """
+
+        return self.rpm
+
+
     def update_rpm(
             self,
             load_torque: float,

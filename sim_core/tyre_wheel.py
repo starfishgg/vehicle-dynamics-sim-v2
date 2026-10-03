@@ -163,6 +163,17 @@ class Wheel:
         return self.angular_velocity * self.radius
 
 
+    def get_rpm(self) -> float:
+        """
+        Return the wheel's rotational speed in revolutions per minute.
+
+        Returns:
+            Wheel RPM.
+        """
+
+        return self.angular_velocity * 60.0 / (2.0 * math.pi)
+
+
     def update_rotation(
             self,
             brake_torque: float,

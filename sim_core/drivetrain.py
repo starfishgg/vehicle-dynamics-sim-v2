@@ -174,6 +174,20 @@ class Drivetrain:
         return average_wheel_speed * total_ratio
 
 
+    def get_drivetrain_rpm(self) -> float:
+        """
+        Calculate the average angular velocity of the driven wheels
+        and convert it through the current gearbox ratio.
+
+        Returns:
+            Equivalent engine speed in RPM.
+        """
+
+        drivetrain_angular_velocity = self.get_drivetrain_angular_velocity()
+
+        return drivetrain_angular_velocity * 60.0 / (2.0 * math.pi)
+
+
     def get_drivetrain_torque(self) -> float:
         """
         Calculate the torque delivered to the drivetrain.
@@ -232,7 +246,7 @@ class Drivetrain:
         )
 
 
-    def update_automatic_shift(self) -> None:
+    def update_automatic_shift(self) -> tuple[int, int] | None:
         """
         Shift up automatically when the engine approaches redline.
 
@@ -241,31 +255,38 @@ class Drivetrain:
         the drivetrain is coupled again.
         """
         if not self.clutch_engaged:
-            return
+            return None
     
         shift_rpm = self.engine.redline * 0.90
 
         if self.engine.rpm < shift_rpm:
-            return
+            return None
         
         current_gear = self.gearbox.current_gear
         next_gear = current_gear + 1
 
         if next_gear not in self.gearbox.ratios:
-            return
+            return None
 
         if not self.is_drivetrain_transmitting_torque():
-            return
+            return None
         
         # *** TEMP TEST DIAGNOSTIC ***
-        print(
-            f"GEAR SHIFT {current_gear} -> {next_gear}"
-        )
+        #print(
+        #    f"{self.engine.redline=} | "
+        #    f"{self.engine.rpm=:.0f} RPM | "
+        #    f"Gear {current_gear} -> {next_gear} | "
+        #    f"Engine torque {self.engine.get_available_torque():.1f} Nm | "
+        #    f"Clutch torque {self.clutch_torque:.1f} Nm"
+        #)
 
         if next_gear in self.gearbox.ratios:
             self.gearbox.shift_up()
             self.clutch_engaged = False
             self.clutch_engagement = 0.0
+            return current_gear, next_gear
+
+        return None
 
 
     def is_drivetrain_transmitting_torque(self) -> bool:

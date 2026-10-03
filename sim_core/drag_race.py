@@ -33,8 +33,8 @@ class DragRace:
             measured in metres.
         """
 
-        if len(cars) < 2:
-            raise ValueError("A drag race requires at least two cars.")
+        if len(cars) < 1:
+            raise ValueError("Drag race requires at least one car.")
 
         if finish_distance <= 0.0:
             raise ValueError("Finish distance must be greater than zero.")
@@ -49,23 +49,25 @@ class DragRace:
         self.finished_cars: set[Vehicle] = set()
         self.finish_times: dict[Vehicle, float] = {}
 
+
     def update(self, dt: float) -> None:
         """
-        Advamce every car by one simulation step.
+        Advance every car by one simulation step.
         
         All cars are updates using the same time step so that
         they remain part of the same simulation.
         """
 
-        if dt <= 0.0:
-            raise ValueError("dt must be greater than zero.")
-
         if self.finished:
             return
 
+        if dt <= 0.0:
+            raise ValueError("dt must be greater than zero.")
+
+        # Update cars that have not yet croeed the finish line.
         for car in self.cars:
             if car not in self.finished_cars:
-               car.update(dt)
+                car.update(dt)
 
         self.elapsed_time += dt
 
@@ -77,21 +79,23 @@ class DragRace:
         Check whether any car has reached the finish distance.
 
         The first car to reach the finish line is declared
-        the winner, but the race continues until every car has crossed the finish line.
+        the winner.
         """
 
         for car in self.cars:
-            if (
-                car not in self.finished_cars
-                and car.physics.position_x >= self.finish_distance
-            ):
+            if car in self.finished_cars:
+                continue
+
+            # If the car has crossed the finish line, record its finish time.
+            if car.physics.position_x >= self.finish_distance:
                 self.finished_cars.add(car)
                 self.finish_times[car] = self.elapsed_time
 
+                # If this is the first car to finish, declare it the winner.
                 if self.winner is None:
                     self.winner = car
-                return
 
+        # IF all cars have finished, mark the race as finished.
         if len(self.finished_cars) == len(self.cars):
             self.finished = True
 
@@ -138,11 +142,12 @@ class DragRace:
 
     def get_results(self) -> list[tuple[Vehicle, float]]:
         """
-        Return the race results ordered by finish time.
+        Return finished cars ordered by their finish time.
         """
-
+        
         return sorted(
             self.finish_times.items(),
             key=lambda result: result[1],
         )
 
+    

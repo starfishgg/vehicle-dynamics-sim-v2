@@ -22,7 +22,6 @@ the detailed tyre or engine mathematics itself.
 """
 
 
-
 from sim_core.driver_input import DriverInput
 from sim_core.engine import Engine, Gearbox
 from sim_core.drivetrain import Drivetrain
@@ -438,7 +437,37 @@ class Vehicle:
         self.drivetrain.update_engine(dt)
 
         # Check whether an automatic gear change is required
-        self.drivetrain.update_automatic_shift()
+        shift = self.drivetrain.update_automatic_shift()
+
+        if shift is not None:
+            old_gear, new_gear = shift
+
+            speed = math.sqrt(
+                self.physics.velocity_x ** 2
+                + self.physics.velocity_y ** 2
+            )
+
+            # Still bugtesting dodgy gear changes...
+            drivetrain_rpm = self.drivetrain.get_drivetrain_angular_velocity(self.wheels)
+
+            relative_rpm = self.drivetrain.engine.get_rpm() - drivetrain_rpm
+
+            print(
+                f"{self.name}: "
+                f"{self.physics.position_x:.1f} m | "
+                f"{speed * 3.6:.1f} km/h | "
+                f"{self.drivetrain.engine.rpm:.0f} RPM | "
+                f"Gear {old_gear} -> {new_gear}"
+            )
+            print(
+                f"Wheel RPM FL: {self.wheels[FRONT_LEFT].get_rpm():.0f} | "
+                f"Wheel RPM BL: {self.wheels[REAR_LEFT].get_rpm():.0f} | "
+                f"Drivetrain RPM: {drivetrain_rpm:.0f} | "
+                f"Relative RPM: {relative_rpm:.0f} | "
+                f"Slip FL: {self.wheels[FRONT_LEFT].slip_ratio:.2f} | "
+                f"Clutch torque: {self.drivetrain.clutch_torque:.0f} Nm"
+            )
+
 
         # Update the automatic clutch state
         self.drivetrain.update_clutch(dt)
