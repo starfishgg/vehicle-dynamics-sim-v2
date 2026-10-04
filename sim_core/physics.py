@@ -128,20 +128,6 @@ def tyre_force_coefficient(
     )
 
 
-# These are deliberately simple starting values.
-#
-# D represents the approximate peak friction coefficient.
-#
-# A value of 1.0 means the tyre can produce approximately
-# one times its normal load as force.
-SPORTS_TYRE = {
-    "B": 10.0,
-    "C": 1.9,
-    "D": 1.0,
-    "E": 0.97,
-}
-
-
 def calculate_longitudinal_tyre_force(
     wheel: Wheel,
     tyre_settings: dict[str, float],

@@ -34,6 +34,7 @@ class Drivetrain:
             gearbox: Gearbox,
             driven_wheel_ids: list[int],
     ) -> None:
+
         self.engine = engine
         self.gearbox = gearbox
         self.driven_wheel_ids = driven_wheel_ids
@@ -168,13 +169,25 @@ class Drivetrain:
 
         total_ratio = self.gearbox.get_total_ratio()
 
+        # TEMP TEST DIAGNOSTIC
+        #print(
+        #    "Driven wheels:",
+        #    [
+        #        wheel.get_rpm()
+        #        for wheel in driven_wheels
+        #    ],
+        #    "Gear ratio:",
+        #    total_ratio,
+        #)
+
+
         if total_ratio == 0.0:
             return 0.0
 
         return average_wheel_speed * total_ratio
 
 
-    def get_drivetrain_rpm(self) -> float:
+    def get_drivetrain_rpm(self, wheels: list["Wheel"]) -> float:
         """
         Calculate the average angular velocity of the driven wheels
         and convert it through the current gearbox ratio.
@@ -183,7 +196,7 @@ class Drivetrain:
             Equivalent engine speed in RPM.
         """
 
-        drivetrain_angular_velocity = self.get_drivetrain_angular_velocity()
+        drivetrain_angular_velocity = self.get_drivetrain_angular_velocity(wheels)
 
         return drivetrain_angular_velocity * 60.0 / (2.0 * math.pi)
 

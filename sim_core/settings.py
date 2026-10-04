@@ -108,6 +108,12 @@ HIGH_REV_SUPERCAR_ENGINE = {
 # TYRE CONFIGURATIONS
 # ============================================================
 
+# These are deliberately simple starting values.
+#
+# D represents the approximate peak friction coefficient.
+#
+# A value of 1.0 means the tyre can produce approximately
+# one times its normal load as force.
 SPORTS_TYRE = {
     "B": 10.0,
     "C": 1.9,

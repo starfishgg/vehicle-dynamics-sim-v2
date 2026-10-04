@@ -7,6 +7,7 @@ import math
 import pygame
 
 from sim_core.vehicle import Vehicle
+from sim_core.drag_race import DragRace
 from sim_core.math_utils import metres_per_second_to_kph
 
 
@@ -95,7 +96,7 @@ class Visualizer:
             pygame.SRCALPHA,
         )
 
-        if car.name == "Sporty Engine Car":
+        if car.name == "Sporty Engine Car" or car.name == "RWD Car":
             car_colour = (220, 40, 40)
         else:
             car_colour = (40, 120, 220)
@@ -145,6 +146,7 @@ class Visualizer:
     def draw_vehicle_info(
             self,
             car: Vehicle,
+            race: DragRace,
             simulation_time: float,
             screen_position: tuple[int, int] = (20, 20),
     ) -> None:
@@ -159,13 +161,18 @@ class Visualizer:
             )
         )
 
+        if car in race.finish_times:
+            display_time = race.finish_times[car]
+        else:
+            display_time = simulation_time
+
         text = (
             f"{car.name}\n"
-            f"Time: {simulation_time:.2f} s\n"
+            f"Time: {display_time:.2f} s\n"
             f"Distance: {car.physics.position_x:.2f} m\n"
             f"Speed: {speed:.2f} km/h\n"
             f"Gear: {car.drivetrain.gearbox.current_gear}\n"
-            f"RPM: {car.drivetrain.engine.rpm:.2f}\n"
+            f"RPM: {car.drivetrain.engine.rpm:.0f}\n"
         )
 
         text_surface = self.font.render(
@@ -183,6 +190,7 @@ class Visualizer:
     def draw(
             self,
             cars: list[Vehicle],
+            race: DragRace,
             simulation_time: float,
     ) -> None:
         """
@@ -195,9 +203,9 @@ class Visualizer:
             self.draw_car(car)
 
         if cars:
-            self.draw_vehicle_info(cars[0], simulation_time, (20, 20))
+            self.draw_vehicle_info(cars[0], simulation_time, race, (20, 20))
             if len(cars) > 1:
-                self.draw_vehicle_info(cars[1], simulation_time, (500, 20))
+                self.draw_vehicle_info(cars[1], simulation_time, race, (500, 20))
 
         pygame.display.flip()
 

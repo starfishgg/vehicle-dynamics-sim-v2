@@ -61,8 +61,15 @@ class Vehicle:
         driver_input: DriverInput,
         engine: Engine,
         gearbox: Gearbox,
+        rwd: bool=True,
         name: str="Unknown",
     ) -> None:
+
+        # Debugging on or off. When on, prints out diagnostic information about the drivetrain.
+        self.debug: bool = True
+        self.debug_time = 0.0
+        self.next_debug_time = 0.0
+        self.debug_interval: float = 0.05
 
         self.name=name
 
@@ -125,7 +132,7 @@ class Vehicle:
         # ----------------------------------------------------------
         # Wheels
         # ----------------------------------------------------------
-        self.wheels = self._create_wheels()
+        self.wheels = self._create_wheels(rwd=rwd)
 
         # ----------------------------------------------------------
         # Powertrain
@@ -145,7 +152,7 @@ class Vehicle:
         self.physics = PhysicsState()
 
 
-    def _create_wheels(self) -> list[Wheel]:
+    def _create_wheels(self, rwd: bool=True) -> list[Wheel]:
         """
         Create the vehicle's four wheels.
 
@@ -161,17 +168,25 @@ class Vehicle:
             Left wheels  = positive Y
             Right wheels = negative Y
         """
-
         half_wheelbase = self.wheelbase / 2.0
         half_front_track = self.front_track / 2.0
         half_rear_track = self.rear_track / 2.0
+
+
+        if rwd:
+            front_driven = False
+            rear_driven = True
+        else:
+            front_driven = True
+            rear_driven = False
+            
 
         wheels = [
             Wheel(
                 name="Front Left",
                 position_x=half_wheelbase,
                 position_y=half_front_track,
-                driven=True,
+                driven=front_driven,
                 steering=True,
             ),
 
@@ -179,7 +194,7 @@ class Vehicle:
                 name="Front Right",
                 position_x=half_wheelbase,
                 position_y=-half_front_track,
-                driven=True,
+                driven=front_driven,
                 steering=True,
             ),
 
@@ -187,7 +202,7 @@ class Vehicle:
                 name="Rear Left",
                 position_x=-half_wheelbase,
                 position_y=half_rear_track,
-                driven=False,
+                driven=rear_driven,
                 steering=False,
             ),
 
@@ -195,7 +210,7 @@ class Vehicle:
                 name="Rear Right",
                 position_x=-half_wheelbase,
                 position_y=-half_rear_track,
-                driven=False,
+                driven=rear_driven,
                 steering=False,
             ),
         ]
@@ -272,11 +287,11 @@ class Vehicle:
         """
         Calculate longitudinal and lateral force for every wheel.
 
-        This is the first simplified force model.
+        The Magic Formula calculates the target longitudinal force.
+        The tyre relaxation model then moves the actual force towards
+        that target over a finite distance.
 
-        Longitudinal force comes from drive torque.
-
-        Lateral force currently comes from the wheel slip angle.
+        Lateral force still uses the existing slip-angle calculation.
         """
 
         from sim_core.physics import (
@@ -285,16 +300,17 @@ class Vehicle:
         )
 
         tyre_settings = SPORTS_TYRE
+
+
         for wheel in self.wheels:
             # Reset forces before calculating new ones.
             wheel.reset_forces()
 
-            # Calculate wheel slip relative to vehicle forward speed.
+            # Calculate longitudinal slip and lateral slip angle.
             wheel.calculate_slip_ratio(
                 self.physics.velocity_x
             )
 
-            # Calculate slip angle.
             wheel.calculate_slip_angle(
                 forward_velocity=self.physics.velocity_x,
                 sideways_velocity=self.physics.velocity_y
@@ -368,13 +384,13 @@ class Vehicle:
         )
 
         front_axle_load = static_front_load - load_transfer
-        read_axle_load = static_rear_load + load_transfer
+        rear_axle_load = static_rear_load + load_transfer
 
 
         # Assuming a four-wheeled vehicle with equel left/right
         # weight distribution.
         front_wheel_load = front_axle_load / 2.0
-        rear_wheel_load = read_axle_load / 2.0
+        rear_wheel_load = rear_axle_load / 2.0
 
 
         self.wheels[FRONT_LEFT].normal_force = front_wheel_load
@@ -423,6 +439,50 @@ class Vehicle:
         # ----------------------------------------------------------
         self.calculate_wheel_forces()
 
+        # DEBUGGING: Print out drivetrain information at regular intervals.
+        if self.debug:
+            self.debug_time += dt
+
+            if (
+                self.debug_time <= 1.0
+                and self.debug_time >= self.next_debug_time
+            ):
+                front_wheel = self.wheels[FRONT_LEFT]
+                rear_wheel = self.wheels[REAR_LEFT]
+
+                vehicle_speed = math.sqrt(
+                    self.physics.velocity_x ** 2
+                    + self.physics.velocity_y ** 2
+                )
+
+                print(
+                    f"{self.name} | "
+
+                    f"{self.debug_time:.3f}s | "
+                    f"FL slip={front_wheel.slip_ratio:.8f} | "
+                    f"FL force={front_wheel.longitudinal_force:.4f} | "
+                    f"FL drive={front_wheel.drive_torque:.4f} | "
+                    f"FL omega={front_wheel.angular_velocity:.8f}"
+
+                    f"RL slip={rear_wheel.slip_ratio:.8f} | "
+                    f"RL force={rear_wheel.longitudinal_force:.4f} | "
+                    f"RL drive={rear_wheel.drive_torque:.4f} | "
+                    f"RL omega={rear_wheel.angular_velocity:.8f}"
+
+                    #f"{self.debug_time:5.2f}s | "
+                    #f"Vehicle: {vehicle_speed:6.2f} m/s | "
+                    #f"FL Speed: {front_wheel.get_surface_speed():6.2f} | "
+                    #f"FL Slip: {front_wheel.slip_ratio:5.2f} | "
+                    #f"FL Force: {front_wheel.longitudinal_force:7.1f} N | "
+                    #f"FL Load: {front_wheel.normal_force:7.1f} N | "
+                    #f"RL Speed: {rear_wheel.get_surface_speed():6.2f} | "
+                    #f"RL Slip: {rear_wheel.slip_ratio:5.2f} | "
+                    #f"RL Force: {rear_wheel.longitudinal_force:7.1f} N | "
+                    #f"RL Load: {rear_wheel.normal_force:7.1f} N"
+                )
+
+                self.next_debug_time += self.debug_interval
+
         # ----------------------------------------------------------
         # 6. Update wheel rotations
         # ----------------------------------------------------------
@@ -436,6 +496,7 @@ class Vehicle:
         # Feed the resulting wheel speed back into the engine.
         self.drivetrain.update_engine(dt)
 
+
         # Check whether an automatic gear change is required
         shift = self.drivetrain.update_automatic_shift()
 
@@ -448,7 +509,7 @@ class Vehicle:
             )
 
             # Still bugtesting dodgy gear changes...
-            drivetrain_rpm = self.drivetrain.get_drivetrain_angular_velocity(self.wheels)
+            drivetrain_rpm = self.drivetrain.get_drivetrain_rpm(self.wheels)
 
             relative_rpm = self.drivetrain.engine.get_rpm() - drivetrain_rpm
 
@@ -456,7 +517,7 @@ class Vehicle:
                 f"{self.name}: "
                 f"{self.physics.position_x:.1f} m | "
                 f"{speed * 3.6:.1f} km/h | "
-                f"{self.drivetrain.engine.rpm:.0f} RPM | "
+                f"{self.drivetrain.engine.get_rpm():.0f} RPM | "
                 f"Gear {old_gear} -> {new_gear}"
             )
             print(
@@ -465,6 +526,7 @@ class Vehicle:
                 f"Drivetrain RPM: {drivetrain_rpm:.0f} | "
                 f"Relative RPM: {relative_rpm:.0f} | "
                 f"Slip FL: {self.wheels[FRONT_LEFT].slip_ratio:.2f} | "
+                f"Slip BL: {self.wheels[REAR_LEFT].slip_ratio:.2f} | "
                 f"Clutch torque: {self.drivetrain.clutch_torque:.0f} Nm"
             )
 

@@ -139,6 +139,8 @@ class Wheel:
 
         # Force along the wheel's rolling direction.
         self.longitudinal_force: float = 0.0
+        # Usecd for tyre relaxation dyanmics
+        self.longitudinal_force_state: float = 0.0
 
         # Force sideways across the tyre.
         self.lateral_force: float = 0.0
@@ -300,6 +302,56 @@ class Wheel:
 
         return self.slip_ratio
 
+
+    # NOTE: NOT YET IMPLEMENTED AS IT MAKES THINGS WORSE FOR NOW
+    def update_longitudinal_force(
+            self,
+            target_force: float,
+            vehicle_speed: float,
+            relaxation_length: float,
+            dt: float,
+    ) -> None:
+        """
+       Move the tyre's longitudinal force towards its target force.
+
+       A real tyre does not generate its full steady-state force
+       instantaneously when slip changes. The tyre carcass deforms
+       and the force builds over a finite distance known as the relaxation length.
+
+       The corresponding time constant is approximately:
+    
+           relaxation length / vehicle speed
+
+        This forst-order model gives the tyre a dynamic response
+        rather than making the Magic Formula force change
+        instanteneously.
+        """
+
+        if dt <= 0.0:
+            raise ValueError("dt must be greater than zero.")
+
+        minimum_speed = 0.1
+        effective_speed = max(
+            abs(vehicle_speed),
+            minimum_speed,
+        )
+
+        relaxation_time = (
+            relaxation_length / effective_speed
+        )
+
+        decay = math.exp(-dt / relaxation_time)
+
+        self.longitudinal_force_state = (
+            target_force
+            + (
+                self.longitudinal_force_state
+                - target_force
+            ) * decay
+        )
+
+        self.longitudinal_force = self.longitudinal_force_state
+        
 
     def calculate_slip_angle(
             self,
